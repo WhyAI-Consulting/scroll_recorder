@@ -162,6 +162,49 @@ async function handleCookiePopups(page) {
   }
 }
 
+async function waitNoMutations(page, selector) {
+  return await page.evaluateHandle(function (selector) {
+    var list = document.querySelectorAll(selector);
+    var elements = [].slice.call(list);
+    var config = { attributes: true, childList: true, subtree: true };
+    var mutations = 5; // wait at least five intervals
+    var observer = new MutationObserver(function () {
+      mutations += 1;
+    });
+    elements.forEach(function (target) {
+      observer.observe(target, config);
+    });
+    var decrementInterval = setInterval(function () {
+      mutations -= 1;
+      if (mutations <= 0) {
+        clearInterval(decrementInterval);
+      }
+    }, 5); // this quant might be reduced?
+    function complete() {
+      return mutations <= 0;
+    }
+    return new Promise(function (resolve) {
+      var count = 0;
+      var completeInterval = setInterval(function () {
+        if (count >= 1000) {
+          // timeout?
+          clearInterval(completeInterval);
+          observer.disconnect();
+          resolve("timeout");
+          return;
+        }
+        if (complete()) {
+          clearInterval(completeInterval);
+          observer.disconnect();
+          resolve(true);
+          return;
+        }
+        count += 1;
+      }, 5);
+    });
+  }, selector);
+}
+
 async function generateVideo(
   url,
   scrollSpeed,
@@ -211,6 +254,7 @@ async function generateVideo(
 
     // Additional wait to ensure page is stable after cookie handling
     await setupPage.waitForLoadState("networkidle");
+
     await setupPage.waitForTimeout(2000); // Increased wait time for stability
 
     // Get storage state BEFORE closing the setup context
@@ -240,6 +284,15 @@ async function generateVideo(
     log(`Navigating to ${url} for recording`);
     await page.goto(url, { waitUntil: "networkidle" });
     log("Page loaded for recording");
+
+    // Wait for the page to stabilize after loading
+    log("Waiting for page to stabilize...");
+    await waitNoMutations(page, "body");
+    log("Page stabilized, starting recording");
+
+    // Wait for 2 seconds before starting the scroll
+    await page.waitForTimeout(2000);
+    log("Waited 2 seconds before starting scroll");
 
     if (hideElements.length > 0) {
       log(`Hiding elements: ${JSON.stringify(hideElements)}`);
