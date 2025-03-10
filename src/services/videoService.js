@@ -2,6 +2,7 @@ const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
 const { calculateScrollDuration } = require("../utils/scrollUtils");
+const { uploadToS3 } = require("./storageService");
 
 // Create logs directory if it doesn't exist
 const logsDir = path.join(__dirname, "../../logs");
@@ -9,8 +10,8 @@ if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
-// Create videos directory if it doesn't exist
-const videosDir = path.join(__dirname, "../../videos");
+// Create temporary videos directory if it doesn't exist
+const videosDir = path.join(__dirname, "../../temp_videos");
 if (!fs.existsSync(videosDir)) {
   fs.mkdirSync(videosDir, { recursive: true });
 }
@@ -299,14 +300,31 @@ async function generateVideo(
     log("Scroll recording completed");
 
     // Close the context to finish the video
-    const videoPath = (await page.video().path()).split("/").pop();
+    const localVideoPath = await page.video().path();
     await recordingContext.close();
     log("Recording context closed, video saved");
 
     await browser.close();
     log("Browser closed");
 
-    return videoPath;
+    // Add a small delay to ensure file is fully written
+    log("Waiting for video file to be fully written...");
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Verify file exists and is readable
+    if (!fs.existsSync(localVideoPath)) {
+      throw new Error(`Video file not found at: ${localVideoPath}`);
+    }
+
+    const stats = fs.statSync(localVideoPath);
+    log(`Video file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+
+    // Upload to S3 and get signed URL
+    log("Uploading video to S3...");
+    const { url: signedUrl } = await uploadToS3(localVideoPath);
+    log("Video uploaded to S3 successfully");
+
+    return signedUrl;
   } catch (error) {
     log(`Error in generateVideo: ${error.message}`, "error");
     log(error.stack, "error");

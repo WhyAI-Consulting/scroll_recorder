@@ -1,5 +1,8 @@
 const videoService = require("../services/videoService");
 
+// Get the base URL from environment variable or use a default
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+
 const generateBackground = async (req, res) => {
   console.log("Received request to generate background video:", req.body);
 
@@ -45,7 +48,7 @@ const generateBackground = async (req, res) => {
       duration,
     });
 
-    const videoPath = await videoService.generateVideo(
+    const videoUrl = await videoService.generateVideo(
       url,
       scrollSpeed,
       resolution,
@@ -54,8 +57,8 @@ const generateBackground = async (req, res) => {
       duration
     );
 
-    console.log(`Video generated successfully: ${videoPath}`);
-    res.json({ videoUrl: `/videos/${videoPath.split("/").pop()}` });
+    console.log(`Video generated and uploaded successfully: ${videoUrl}`);
+    res.json({ videoUrl });
   } catch (error) {
     console.error("Error generating video:", error);
     res.status(500).json({
